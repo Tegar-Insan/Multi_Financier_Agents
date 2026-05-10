@@ -2,7 +2,9 @@ import os
 from datetime import datetime
 from typing import Optional
 import gspread 
-from google.auth2.service_account import Credentials
+from google.oauth2.service_account import Credentials
+
+
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
