@@ -1,6 +1,8 @@
 import os
+from pathlib import Path
 
 from google.adk.agents import LlmAgent
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams, StdioServerParameters
 
 from .tools import (
     create_monthly_budget_sheet,
@@ -14,7 +16,9 @@ from .tools import (
     extract_key_financial_figures,
 )
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.5-flash"
+
+_SERVER_PATH = str(Path(__file__).parent.parent / "mcpserver" / "server.py")
 
 # ── Agent 2 ───────────────────────────────────────────────────────────────────
 budget_tracker_agent = LlmAgent(
@@ -57,7 +61,6 @@ budget_tracker_agent = LlmAgent(
         create_monthly_budget_sheet,
         add_expense_entry,
         get_budget_summary,
-        
     ],
 )
 
@@ -127,6 +130,57 @@ financial_pdf_agent = LlmAgent(
     ],
 )
 
+# ── Agent 5 ───────────────────────────────────────────────────────────────────
+fetchnewsagent = LlmAgent(
+    name="FetchNNewsAgent",
+    model=GEMINI_MODEL,
+    description=(
+        "Fetches live financial data via Financial Datasets API: news, stock quotes, "
+        "earnings reports, financial metrics, market movers, crypto, and financial statements. "
+        "Use when user asks about stock prices, earnings, valuations, news, Bitcoin, "
+        "top gainers/losers, or a company's income/balance/cashflow statement."
+    ),
+    instruction="""
+    You are a financial data retrieval agent connected to live market data via Financial Datasets API.
+
+    AVAILABLE TOOLS:
+    - financial_news(keywords, limit)          → news headlines; pass ticker for company news
+    - stock_quote(symbol)                      → real-time price snapshot
+    - financial_statements(symbol, type)       → income / balance / cashflow (SEC filings)
+    - earnings(symbol, limit)                  → EPS actuals vs estimates, revenue, market signals
+    - company_metrics(symbol)                  → valuation, profitability, growth, liquidity ratios
+    - market_data(filter_type)                 → gainers / losers / most active (FMP)
+    - crypto_data(symbol)                      → crypto prices: BTCUSD, ETHUSD, XRPUSD (FMP)
+
+    WORKFLOW:
+    1. Identify what the user wants
+    2. Call the appropriate tool with correct parameters
+    3. Return the formatted result directly — do not fabricate or add personal opinions
+
+    EXAMPLES:
+    "Latest financial news"            → financial_news()
+    "Apple news"                       → financial_news("AAPL")
+    "Apple stock price"                → stock_quote("AAPL")
+    "Top gainers today"                → market_data("gainers")
+    "Bitcoin price"                    → crypto_data("BTCUSD")
+    "Tesla income statement"           → financial_statements("TSLA", "income")
+    "Microsoft balance sheet"          → financial_statements("MSFT", "balance")
+    "Apple earnings last 4 quarters"   → earnings("AAPL", 4)
+    "Nvidia financial health"          → company_metrics("NVDA")
+    "Google valuation ratios"          → company_metrics("GOOGL")
+    """,
+    tools=[
+        MCPToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command="python",
+                    args=[_SERVER_PATH],
+                )
+            )
+        )
+    ],
+)
+
 # ── Agent 1 (root) ────────────────────────────────────────────────────────────
 root_agent = LlmAgent(
     name="FinancialOrchestratorAgent",
@@ -139,6 +193,7 @@ root_agent = LlmAgent(
     🗂️  BudgetTrackerAgent  → new budget, record income, log expenses, check balance
     📊  BudgetAdvisorAgent  → analysis, advice, health score, monthly review
     📄  FinancialPDFAgent   → any PDF file, document summary, financial statements
+    📰  FetchNNewsAgent     → live market news, stock prices, crypto, market movers, company financials
 
     RULES:
     1. Greet the user warmly on first message
@@ -147,15 +202,24 @@ root_agent = LlmAgent(
     4. Never handle tasks yourself — always delegate
 
     EXAMPLES:
-    "Start my March budget"          → BudgetTrackerAgent
-    "I earn salary + freelance"      → BudgetTrackerAgent
-    "Am I overspending?"             → BudgetAdvisorAgent
-    "Summarize this PDF"             → FinancialPDFAgent
-    "Add RM15 for lunch"             → BudgetTrackerAgent
+    "Start my March budget"              → BudgetTrackerAgent
+    "I earn salary + freelance"          → BudgetTrackerAgent
+    "Am I overspending?"                 → BudgetAdvisorAgent
+    "Summarize this PDF"                 → FinancialPDFAgent
+    "Add RM15 for lunch"                 → BudgetTrackerAgent
+    "What's the financial news?"         → FetchNNewsAgent
+    "What is the price of bitcoin today?"→ FetchNNewsAgent
+    "How is the stock market doing?"     → FetchNNewsAgent
+    "Top gainers today"                  → FetchNNewsAgent
+    "Apple stock price"                  → FetchNNewsAgent
+    "Tesla income statement"             → FetchNNewsAgent
+    "Apple earnings last quarter"        → FetchNNewsAgent
+    "Nvidia valuation ratios"            → FetchNNewsAgent
     """,
     sub_agents=[
         budget_tracker_agent,
         budget_advisor_agent,
         financial_pdf_agent,
+        fetchnewsagent,
     ],
 )

@@ -13,6 +13,16 @@ from .pdf_tools import (
     detect_financial_document_type,
     extract_key_financial_figures,
 )
+from .fmp_tools import (
+    get_financial_news,
+    get_stock_quote,
+    get_market_data,
+    get_crypto_data,
+    get_financial_statements,
+    get_earnings,
+    get_company_metrics,
+)
+
 
 __all__ = [
     "create_monthly_budget_sheet",
@@ -24,4 +34,11 @@ __all__ = [
     "extract_text_from_pdf",
     "detect_financial_document_type",
     "extract_key_financial_figures",
+    "get_financial_news",
+    "get_stock_quote",
+    "get_market_data",
+    "get_crypto_data",
+    "get_financial_statements",
+    "get_earnings",
+    "get_company_metrics",
 ]
