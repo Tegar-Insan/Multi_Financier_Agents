@@ -12,6 +12,9 @@ from financial_advisor.tools.fmp_tools import (
     get_stock_quote,
     get_financial_news,
     get_financial_statements,
+    get_income_statements,
+    get_balance_sheets,
+    get_cashflow_statements,
     get_earnings,
     get_company_metrics,
     get_market_data,
@@ -81,6 +84,38 @@ def crypto_data(symbol: str = "BTCUSD") -> str:
     Example: crypto_data('BTCUSD')
     """
     return get_crypto_data(symbol)
+
+@mcp.tool()
+def income_statements(symbol: str, period: str = "annual", limit: int = 4) -> str:
+    """
+    Detailed income statements (revenue, margins, EPS, shares outstanding, etc.)
+    from SEC filings via Financial Datasets API.
+    period: 'annual' | 'quarterly' | 'ttm'. limit: number of periods (1-10).
+    Example: income_statements('AAPL', 'quarterly', 4)
+    """
+    return get_income_statements(symbol, period, limit)
+
+
+@mcp.tool()
+def balance_sheets(symbol: str, period: str = "annual", limit: int = 4) -> str:
+    """
+    Detailed balance sheets (assets, liabilities, equity, debt) from SEC filings
+    via Financial Datasets API.
+    period: 'annual' | 'quarterly' | 'ttm'. limit: number of periods (1-10).
+    Example: balance_sheets('AAPL', 'annual', 4)
+    """
+    return get_balance_sheets(symbol, period, limit)
+
+
+@mcp.tool()
+def cashflow_statements(symbol: str, period: str = "annual", limit: int = 4) -> str:
+    """
+    Detailed cash flow statements (operating/investing/financing cash flow,
+    capex, free cash flow) from SEC filings via Financial Datasets API.
+    period: 'annual' | 'quarterly' | 'ttm'. limit: number of periods (1-10).
+    Example: cashflow_statements('AAPL', 'quarterly', 4)
+    """
+    return get_cashflow_statements(symbol, period, limit)
 
 
 if __name__ == "__main__":

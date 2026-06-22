@@ -7,6 +7,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionPar
 from .tools import (
     create_monthly_budget_sheet,
     add_expense_entry,
+    add_income_entry,
     get_budget_summary,
     record_income_sources,
     analyze_budget_health,
@@ -136,7 +137,8 @@ fetchnewsagent = LlmAgent(
     model=GEMINI_MODEL,
     description=(
         "Fetches live financial data via Financial Datasets API: news, stock quotes, "
-        "earnings reports, financial metrics, market movers, crypto, and financial statements. "
+        "earnings reports, financial metrics, market movers, crypto, and financial statements "
+        "(income statements, balance sheets, cash flow statements). "
         "Use when user asks about stock prices, earnings, valuations, news, Bitcoin, "
         "top gainers/losers, or a company's income/balance/cashflow statement."
     ),
@@ -147,10 +149,13 @@ fetchnewsagent = LlmAgent(
     - financial_news(keywords, limit)          → news headlines; pass ticker for company news
     - stock_quote(symbol)                      → real-time price snapshot
     - financial_statements(symbol, type)       → income / balance / cashflow (SEC filings)
+    - income_statements(symbol, period, limit) → detailed income statement line items across periods
+    - balance_sheets(symbol, period, limit)    → assets, liabilities, equity, debt across periods
+    - cashflow_statements(symbol, period, limit) → operating/investing/financing cash flow, capex, FCF
     - earnings(symbol, limit)                  → EPS actuals vs estimates, revenue, market signals
     - company_metrics(symbol)                  → valuation, profitability, growth, liquidity ratios
     - market_data(filter_type)                 → gainers / losers / most active (FMP)
-    - crypto_data(symbol)                      → crypto prices: BTCUSD, ETHUSD, XRPUSD (FMP)
+    - crypto_data(symbol)                      → cryptocurrency price (FMP)
 
     WORKFLOW:
     1. Identify what the user wants
@@ -162,9 +167,11 @@ fetchnewsagent = LlmAgent(
     "Apple news"                       → financial_news("AAPL")
     "Apple stock price"                → stock_quote("AAPL")
     "Top gainers today"                → market_data("gainers")
-    "Bitcoin price"                    → crypto_data("BTCUSD")
     "Tesla income statement"           → financial_statements("TSLA", "income")
+    "Apple income statements last 4Q"  → income_statements("AAPL", "quarterly", 4)
     "Microsoft balance sheet"          → financial_statements("MSFT", "balance")
+    "Microsoft balance sheets last 4Q" → balance_sheets("MSFT", "quarterly", 4)
+    "Tesla cash flow last 4 years"     → cashflow_statements("TSLA", "annual", 4)
     "Apple earnings last 4 quarters"   → earnings("AAPL", 4)
     "Nvidia financial health"          → company_metrics("NVDA")
     "Google valuation ratios"          → company_metrics("GOOGL")
