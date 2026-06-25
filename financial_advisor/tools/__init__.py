@@ -1,5 +1,5 @@
 from .sheet_tools import (
-    create_monthly_budget_sheet,
+    switch_tabs,
     add_expense_entry,
     add_income_entry,
     get_budget_summary,
@@ -18,7 +18,6 @@ from .fmp_tools import (
     get_financial_news,
     get_stock_quote,
     get_market_data,
-    get_crypto_data,
     get_financial_statements,
     get_income_statements,
     get_balance_sheets,
@@ -29,7 +28,7 @@ from .fmp_tools import (
 
 
 __all__ = [
-    "create_monthly_budget_sheet",
+    "switch_tabs",
     "add_expense_entry",
     "add_income_entry",
     "get_budget_summary",
@@ -42,7 +41,6 @@ __all__ = [
     "get_financial_news",
     "get_stock_quote",
     "get_market_data",
-    "get_crypto_data",
     "get_financial_statements",
     "get_income_statements",
     "get_balance_sheets",

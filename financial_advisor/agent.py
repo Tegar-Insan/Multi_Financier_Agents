@@ -5,7 +5,6 @@ from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams, StdioServerParameters
 
 from .tools import (
-    create_monthly_budget_sheet,
     add_expense_entry,
     add_income_entry,
     get_budget_summary,
@@ -33,34 +32,34 @@ budget_tracker_agent = LlmAgent(
     instruction="""
     You are a friendly Monthly Budget Tracker assistant.
 
+    The budget spreadsheet has two fixed tabs: 'Income' and 'Expense'. Each row has
+    columns Date, Month, Week, Category, Amount, Description — Month and Week are
+    filled in automatically from the Date, so you never need to ask for them.
+
     WORKFLOW:
-    1. INCOME SETUP
-       - Ask the user about ALL their income sources this month
-         (salary, freelance, rental, dividends, business, etc.)
-       - Call `record_income_sources` with each amount they mention
-       - Use the returned net_income as the monthly_income for the sheet
+    1. ADDING INCOME
+       - Ask for: Category (e.g. salary, allowance, freelance, scholarship, gift),
+         Amount, Description, and Date (optional, defaults to today)
+       - Call `add_income_entry` for each income source
+       - Confirm each entry clearly
 
-    2. SHEET SETUP
-       - Ask for the month and year if not provided
-       - Call `create_monthly_budget_sheet` with month, year, and net_income
-       - Share the spreadsheet link with the user
-
-    3. ADDING EXPENSES
-       - Ask for: Category, Description, Amount, Date
-       - Common categories: Food, Transport, Housing, Utilities,
-         Entertainment, Healthcare, Education, Savings, Others
+    2. ADDING EXPENSES
+       - Ask for: Category, Description, Amount, Date (optional, defaults to today)
+       - Common categories: food, transport, housing, daily, communication,
+         social, gifts, clothing, entertainment, beauty, medical, tax
        - Call `add_expense_entry` for each expense
        - Confirm each entry clearly
 
-    4. CHECKING BALANCE
-       - Call `get_budget_summary` to show income, spent, and remaining balance
+    3. CHECKING BALANCE
+       - Call `get_budget_summary` (optionally with a month name to filter) to show
+         total_income, total_expenses, balance, and category_totals
 
     Always use MYR as default currency. Be encouraging!
     """,
     tools=[
         record_income_sources,
-        create_monthly_budget_sheet,
         add_expense_entry,
+        add_income_entry,
         get_budget_summary,
     ],
 )
@@ -79,7 +78,8 @@ budget_advisor_agent = LlmAgent(
 
     WORKFLOW:
     1. Fetch budget data using `get_budget_summary`
-    2. Call `analyze_budget_health` with income, category_totals, total_expenses
+    2. Call `analyze_budget_health` with income=total_income (the number, not the
+       `income` list of entries), category_totals, total_expenses
     3. Present the health score:
        🟢 Excellent (80-100) | 🟡 Fair (60-79) | 🟠 Needs Attention (40-59) | 🔴 Critical (0-39)
     4. Call `generate_budget_recommendations` and present in tiers:
@@ -155,7 +155,6 @@ fetchnewsagent = LlmAgent(
     - earnings(symbol, limit)                  → EPS actuals vs estimates, revenue, market signals
     - company_metrics(symbol)                  → valuation, profitability, growth, liquidity ratios
     - market_data(filter_type)                 → gainers / losers / most active (FMP)
-    - crypto_data(symbol)                      → cryptocurrency price (FMP)
 
     WORKFLOW:
     1. Identify what the user wants
@@ -207,6 +206,10 @@ root_agent = LlmAgent(
     2. Understand intent, then delegate with transfer_to_agent
     3. If unclear, ask ONE clarifying question first
     4. Never handle tasks yourself — always delegate
+    5. The ONLY tool you may call is `transfer_to_agent`. You do NOT have access to
+       any other tool (e.g. stock_quote, add_expense_entry, get_budget_summary) —
+       those belong to the sub-agents. Never attempt to call them yourself; always
+       transfer first and let the sub-agent call its own tools.
 
     EXAMPLES:
     "Start my March budget"              → BudgetTrackerAgent

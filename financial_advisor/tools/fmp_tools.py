@@ -314,209 +314,111 @@ def get_financial_statements(symbol: str, statement_type: str = "income") -> str
     _cache.set(cache_key, result, TTL_STATEMENTS)
     return result
 
-# ── Tool 4: Income statements ─────────────────────────────────────────────────
-def get_income_statements(symbol: str, period: str = "annual", limit: int = 4) -> str:
+def get_income_statements(symbol: str, limit: int = 1) -> str:
     """
-    Detailed income statements for a company from the Financial Datasets API
-    /financials/income-statements endpoint (falls back to FMP if unavailable).
-    period: 'annual' | 'quarterly' | 'ttm'
-    limit: number of recent statements to retrieve (1-10, default 4)
+    Fetches the income statements for a given company symbol.
+    limit: number of recent statements to retrieve (
+    default 1)
     """
     if not os.getenv("FINANCIAL_DATASETS_API_KEY") and not os.getenv("FMP_API_KEY"):
         return "No API key set. Add FINANCIAL_DATASETS_API_KEY or FMP_API_KEY to .env."
 
     symbol = symbol.upper().strip()
-    period = period.lower().strip()
-    if period not in ("annual", "quarterly", "ttm"):
-        period = "annual"
     limit = min(max(1, int(limit)), 10)
-
-    cache_key = f"income_statements:{symbol}:{period}:{limit}"
+    cache_key = f"income_statements:{symbol}:{limit}"
     cached = _cache.get(cache_key)
     if cached:
         return cached
 
-    data = _get_fd(
-        "/financials/income-statements",
-        {"ticker": symbol, "period": period, "limit": limit},
-    )
+    data = _get_fd("/financials/income-statements", {"ticker": symbol, "period": "annual", "limit": limit})
 
     records = None
     if isinstance(data, dict) and "income_statements" in data:
         records = data["income_statements"]
-    elif data is not None:
+    else:
         err = _err_msg(data)
         if err:
             return err
 
-    if records:
-        if not records:
-            return f"No income statements found for '{symbol}'."
-        lines = [f"📊 Income Statements — {symbol} ({period})\n"]
-        for s in records:
-            report_period = s.get("report_period", "N/A")
-            fiscal_period = s.get("fiscal_period", "")
-            currency = s.get("currency", "USD")
-            lines.append(f"▸ {fiscal_period} — {report_period} [{currency}]")
-            lines.append(f"  Revenue:                {_fmt_money(s.get('revenue'))}")
-            lines.append(f"  Cost of Revenue:        {_fmt_money(s.get('cost_of_revenue'))}")
-            lines.append(f"  Gross Profit:           {_fmt_money(s.get('gross_profit'))}")
-            lines.append(f"  Operating Expense:      {_fmt_money(s.get('operating_expense'))}")
-            lines.append(f"  SG&A Expense:           {_fmt_money(s.get('selling_general_and_administrative_expenses'))}")
-            lines.append(f"  R&D Expense:            {_fmt_money(s.get('research_and_development'))}")
-            lines.append(f"  Operating Income:       {_fmt_money(s.get('operating_income'))}")
-            lines.append(f"  Interest Expense:       {_fmt_money(s.get('interest_expense'))}")
-            lines.append(f"  EBIT:                   {_fmt_money(s.get('ebit'))}")
-            lines.append(f"  Income Tax Expense:     {_fmt_money(s.get('income_tax_expense'))}")
-            lines.append(f"  Net Income:             {_fmt_money(s.get('net_income'))}")
-            lines.append(f"  Net Income (Common):    {_fmt_money(s.get('net_income_common_stock'))}")
-            lines.append(f"  Consolidated Income:    {_fmt_money(s.get('consolidated_income'))}")
-            lines.append(f"  EPS:                    {s.get('earnings_per_share', 'N/A')}")
-            lines.append(f"  EPS Diluted:            {s.get('earnings_per_share_diluted', 'N/A')}")
-            lines.append(f"  Dividends/Share:        {s.get('dividends_per_common_share', 'N/A')}")
-            lines.append(f"  Weighted Avg Shares:    {s.get('weighted_average_shares', 'N/A')}")
-            lines.append(f"  Weighted Avg Shares Dil:{s.get('weighted_average_shares_diluted', 'N/A')}")
-            if s.get("filing_url"):
-                lines.append(f"  Filing:                 {s.get('filing_url')}")
-            lines.append("")
-        result = "\n".join(lines)
-        _cache.set(cache_key, result, TTL_STATEMENTS)
-        return result
+    if not records:
+        fmp_data = _get_fmp(f"/income-statement/{symbol}", {"period": "annual", "limit": limit})
+        fmp_err = _err_msg(fmp_data, "FMP ")
+        if fmp_err:
+            return fmp_err
+        records = fmp_data if isinstance(fmp_data, list) else None
 
-    # FMP fallback
-    fmp_period = "annual" if period != "quarterly" else "quarter"
-    fmp_data = _get_fmp(f"/income-statement/{symbol}", {"period": fmp_period, "limit": limit})
-    fmp_err = _err_msg(fmp_data, "FMP ")
-    if fmp_err:
-        return fmp_err
-    if not fmp_data or not isinstance(fmp_data, list) or len(fmp_data) == 0:
+    if not records:
         return f"No income statements found for '{symbol}'."
 
-    lines = [f"📊 Income Statements — {symbol} ({period}, via FMP)\n"]
-    for s in fmp_data:
-        date = s.get("date", "N/A")
-        fmp_p = s.get("period", "")
-        currency = s.get("reportedCurrency", "USD")
-        lines.append(f"▸ {fmp_p} — {date} [{currency}]")
-        lines.append(f"  Revenue:                {_fmt_money(s.get('revenue'))}")
-        lines.append(f"  Cost of Revenue:        {_fmt_money(s.get('costOfRevenue'))}")
-        lines.append(f"  Gross Profit:           {_fmt_money(s.get('grossProfit'))}")
-        lines.append(f"  Operating Expense:      {_fmt_money(s.get('operatingExpenses'))}")
-        lines.append(f"  SG&A Expense:           {_fmt_money(s.get('sellingGeneralAndAdministrativeExpenses'))}")
-        lines.append(f"  R&D Expense:            {_fmt_money(s.get('researchAndDevelopmentExpenses'))}")
-        lines.append(f"  Operating Income:       {_fmt_money(s.get('operatingIncome'))}")
-        lines.append(f"  Interest Expense:       {_fmt_money(s.get('interestExpense'))}")
-        lines.append(f"  EBIT:                   {_fmt_money(s.get('operatingIncome'))}")
-        lines.append(f"  Income Tax Expense:     {_fmt_money(s.get('incomeTaxExpense'))}")
-        lines.append(f"  Net Income:             {_fmt_money(s.get('netIncome'))}")
-        lines.append(f"  EPS:                    {s.get('eps', 'N/A')}")
-        lines.append(f"  EPS Diluted:            {s.get('epsdiluted', 'N/A')}")
-        lines.append(f"  Weighted Avg Shares:    {s.get('weightedAverageShsOut', 'N/A')}")
-        lines.append(f"  Weighted Avg Shares Dil:{s.get('weightedAverageShsOutDil', 'N/A')}")
+    lines = [f"📊 Income Statements — {symbol}\n"]
+    for s in records:
+        date = s.get("report_period") or s.get("date", "N/A")
+        period = s.get("fiscal_period") or s.get("period", "")
+        currency = s.get("currency") or s.get("reportedCurrency", "USD")
+        lines.append(f"Period: {period} {date} [{currency}]")
+        lines.append(f"Revenue:          {_fmt_money(s.get('revenue') or s.get('totalRevenue'))}")
+        lines.append(f"Gross Profit:     {_fmt_money(s.get('gross_profit') or s.get('grossProfit'))}")
+        lines.append(f"Operating Income: {_fmt_money(s.get('operating_income') or s.get('operatingIncome'))}")
+        lines.append(f"Net Income:       {_fmt_money(s.get('net_income') or s.get('netIncome'))}")
+        lines.append(f"EPS:              {s.get('earnings_per_share') or s.get('eps', 'N/A')}")
+        lines.append(f"EPS Diluted:      {s.get('earnings_per_share_diluted', 'N/A')}")
+        lines.append(f"EBITDA:           {_fmt_money(s.get('ebitda'))}")
         lines.append("")
     result = "\n".join(lines)
     _cache.set(cache_key, result, TTL_STATEMENTS)
     return result
 
 
-# ── Tool: Balance sheets ───────────────────────────────────────────────────────
-def get_balance_sheets(symbol: str, period: str = "annual", limit: int = 4) -> str:
+# ── Tool: Balance sheets ──────────────────────────────────────────────────────
+def get_balance_sheets(symbol: str, limit: int = 1) -> str:
     """
-    Detailed balance sheets for a company from the Financial Datasets API
-    /financials/balance-sheets endpoint (falls back to FMP if unavailable).
-    period: 'annual' | 'quarterly' | 'ttm'
-    limit: number of recent statements to retrieve (1-10, default 4)
+    Fetches the balance sheets for a given company symbol.
+    limit: number of recent statements to retrieve (default 1)
     """
     if not os.getenv("FINANCIAL_DATASETS_API_KEY") and not os.getenv("FMP_API_KEY"):
         return "No API key set. Add FINANCIAL_DATASETS_API_KEY or FMP_API_KEY to .env."
 
     symbol = symbol.upper().strip()
-    period = period.lower().strip()
-    if period not in ("annual", "quarterly", "ttm"):
-        period = "annual"
     limit = min(max(1, int(limit)), 10)
-
-    cache_key = f"balance_sheets:{symbol}:{period}:{limit}"
+    cache_key = f"balance_sheets:{symbol}:{limit}"
     cached = _cache.get(cache_key)
     if cached:
         return cached
 
-    data = _get_fd(
-        "/financials/balance-sheets",
-        {"ticker": symbol, "period": period, "limit": limit},
-    )
+    data = _get_fd("/financials/balance-sheets", {"ticker": symbol, "period": "annual", "limit": limit})
 
     records = None
     if isinstance(data, dict) and "balance_sheets" in data:
         records = data["balance_sheets"]
-    elif data is not None:
+    else:
         err = _err_msg(data)
         if err:
             return err
 
-    if records:
-        lines = [f"🏦 Balance Sheets — {symbol} ({period})\n"]
-        for s in records:
-            report_period = s.get("report_period", "N/A")
-            fiscal_period = s.get("fiscal_period", "")
-            currency = s.get("currency", "USD")
-            lines.append(f"▸ {fiscal_period} — {report_period} [{currency}]")
-            lines.append(f"  Total Assets:           {_fmt_money(s.get('total_assets'))}")
-            lines.append(f"  Current Assets:         {_fmt_money(s.get('current_assets'))}")
-            lines.append(f"  Cash & Equivalents:     {_fmt_money(s.get('cash_and_equivalents'))}")
-            lines.append(f"  Inventory:              {_fmt_money(s.get('inventory'))}")
-            lines.append(f"  Current Investments:    {_fmt_money(s.get('current_investments'))}")
-            lines.append(f"  Receivables:            {_fmt_money(s.get('trade_and_non_trade_receivables'))}")
-            lines.append(f"  Non-Current Assets:     {_fmt_money(s.get('non_current_assets'))}")
-            lines.append(f"  PP&E:                   {_fmt_money(s.get('property_plant_and_equipment'))}")
-            lines.append(f"  Goodwill & Intangibles: {_fmt_money(s.get('goodwill_and_intangible_assets'))}")
-            lines.append(f"  Total Liabilities:      {_fmt_money(s.get('total_liabilities'))}")
-            lines.append(f"  Current Liabilities:    {_fmt_money(s.get('current_liabilities'))}")
-            lines.append(f"  Current Debt:           {_fmt_money(s.get('current_debt'))}")
-            lines.append(f"  Payables:               {_fmt_money(s.get('trade_and_non_trade_payables'))}")
-            lines.append(f"  Deferred Revenue:       {_fmt_money(s.get('deferred_revenue'))}")
-            lines.append(f"  Non-Current Liabilities:{_fmt_money(s.get('non_current_liabilities'))}")
-            lines.append(f"  Non-Current Debt:       {_fmt_money(s.get('non_current_debt'))}")
-            lines.append(f"  Total Debt:             {_fmt_money(s.get('total_debt'))}")
-            lines.append(f"  Shareholders Equity:    {_fmt_money(s.get('shareholders_equity'))}")
-            lines.append(f"  Retained Earnings:      {_fmt_money(s.get('retained_earnings'))}")
-            lines.append(f"  Outstanding Shares:     {s.get('outstanding_shares', 'N/A')}")
-            if s.get("filing_url"):
-                lines.append(f"  Filing:                 {s.get('filing_url')}")
-            lines.append("")
-        result = "\n".join(lines)
-        _cache.set(cache_key, result, TTL_STATEMENTS)
-        return result
+    if not records:
+        fmp_data = _get_fmp(f"/balance-sheet-statement/{symbol}", {"period": "annual", "limit": limit})
+        fmp_err = _err_msg(fmp_data, "FMP ")
+        if fmp_err:
+            return fmp_err
+        records = fmp_data if isinstance(fmp_data, list) else None
 
-    # FMP fallback
-    fmp_period = "annual" if period != "quarterly" else "quarter"
-    fmp_data = _get_fmp(f"/balance-sheet-statement/{symbol}", {"period": fmp_period, "limit": limit})
-    fmp_err = _err_msg(fmp_data, "FMP ")
-    if fmp_err:
-        return fmp_err
-    if not fmp_data or not isinstance(fmp_data, list) or len(fmp_data) == 0:
+    if not records:
         return f"No balance sheets found for '{symbol}'."
 
-    lines = [f"🏦 Balance Sheets — {symbol} ({period}, via FMP)\n"]
-    for s in fmp_data:
-        date = s.get("date", "N/A")
-        fmp_p = s.get("period", "")
-        currency = s.get("reportedCurrency", "USD")
-        lines.append(f"▸ {fmp_p} — {date} [{currency}]")
-        lines.append(f"  Total Assets:           {_fmt_money(s.get('totalAssets'))}")
-        lines.append(f"  Current Assets:         {_fmt_money(s.get('totalCurrentAssets'))}")
-        lines.append(f"  Cash & Equivalents:     {_fmt_money(s.get('cashAndCashEquivalents'))}")
-        lines.append(f"  Inventory:              {_fmt_money(s.get('inventory'))}")
-        lines.append(f"  Receivables:            {_fmt_money(s.get('netReceivables'))}")
-        lines.append(f"  Non-Current Assets:     {_fmt_money(s.get('totalNonCurrentAssets'))}")
-        lines.append(f"  PP&E:                   {_fmt_money(s.get('propertyPlantEquipmentNet'))}")
-        lines.append(f"  Goodwill & Intangibles: {_fmt_money(s.get('goodwillAndIntangibleAssets'))}")
-        lines.append(f"  Total Liabilities:      {_fmt_money(s.get('totalLiabilities'))}")
-        lines.append(f"  Current Liabilities:    {_fmt_money(s.get('totalCurrentLiabilities'))}")
-        lines.append(f"  Non-Current Liabilities:{_fmt_money(s.get('totalNonCurrentLiabilities'))}")
-        lines.append(f"  Total Debt:             {_fmt_money(s.get('totalDebt'))}")
-        lines.append(f"  Shareholders Equity:    {_fmt_money(s.get('totalStockholdersEquity'))}")
-        lines.append(f"  Retained Earnings:      {_fmt_money(s.get('retainedEarnings'))}")
+    lines = [f"🏦 Balance Sheets — {symbol}\n"]
+    for s in records:
+        date = s.get("report_period") or s.get("date", "N/A")
+        period = s.get("fiscal_period") or s.get("period", "")
+        currency = s.get("currency") or s.get("reportedCurrency", "USD")
+        lines.append(f"Period: {period} {date} [{currency}]")
+        lines.append(f"Total Assets:        {_fmt_money(s.get('total_assets') or s.get('totalAssets'))}")
+        lines.append(f"Current Assets:      {_fmt_money(s.get('current_assets') or s.get('totalCurrentAssets'))}")
+        lines.append(f"Cash & Equivalents:  {_fmt_money(s.get('cash_and_equivalents') or s.get('cashAndCashEquivalents'))}")
+        lines.append(f"Total Liabilities:   {_fmt_money(s.get('total_liabilities') or s.get('totalLiabilities'))}")
+        lines.append(f"Current Liabilities: {_fmt_money(s.get('current_liabilities') or s.get('totalCurrentLiabilities'))}")
+        lines.append(f"Total Debt:          {_fmt_money(s.get('total_debt') or s.get('totalDebt'))}")
+        lines.append(f"Shareholders Equity: {_fmt_money(s.get('shareholders_equity') or s.get('totalStockholdersEquity'))}")
+        lines.append(f"Retained Earnings:   {_fmt_money(s.get('retained_earnings') or s.get('retainedEarnings'))}")
         lines.append("")
     result = "\n".join(lines)
     _cache.set(cache_key, result, TTL_STATEMENTS)
@@ -524,94 +426,53 @@ def get_balance_sheets(symbol: str, period: str = "annual", limit: int = 4) -> s
 
 
 # ── Tool: Cash flow statements ────────────────────────────────────────────────
-def get_cashflow_statements(symbol: str, period: str = "annual", limit: int = 4) -> str:
+def get_cashflow_statements(symbol: str, limit: int = 1) -> str:
     """
-    Detailed cash flow statements for a company from the Financial Datasets API
-    /financials/cash-flow-statements endpoint (falls back to FMP if unavailable).
-    period: 'annual' | 'quarterly' | 'ttm'
-    limit: number of recent statements to retrieve (1-10, default 4)
+    Fetches the cash flow statements for a given company symbol.
+    limit: number of recent statements to retrieve (default 1)
     """
     if not os.getenv("FINANCIAL_DATASETS_API_KEY") and not os.getenv("FMP_API_KEY"):
         return "No API key set. Add FINANCIAL_DATASETS_API_KEY or FMP_API_KEY to .env."
 
     symbol = symbol.upper().strip()
-    period = period.lower().strip()
-    if period not in ("annual", "quarterly", "ttm"):
-        period = "annual"
     limit = min(max(1, int(limit)), 10)
-
-    cache_key = f"cashflow_statements:{symbol}:{period}:{limit}"
+    cache_key = f"cashflow_statements:{symbol}:{limit}"
     cached = _cache.get(cache_key)
     if cached:
         return cached
 
-    data = _get_fd(
-        "/financials/cash-flow-statements",
-        {"ticker": symbol, "period": period, "limit": limit},
-    )
+    data = _get_fd("/financials/cash-flow-statements", {"ticker": symbol, "period": "annual", "limit": limit})
 
     records = None
     if isinstance(data, dict) and "cash_flow_statements" in data:
         records = data["cash_flow_statements"]
-    elif data is not None:
+    else:
         err = _err_msg(data)
         if err:
             return err
 
-    if records:
-        lines = [f"💧 Cash Flow Statements — {symbol} ({period})\n"]
-        for s in records:
-            report_period = s.get("report_period", "N/A")
-            fiscal_period = s.get("fiscal_period", "")
-            currency = s.get("currency", "USD")
-            lines.append(f"▸ {fiscal_period} — {report_period} [{currency}]")
-            lines.append(f"  Net Income:               {_fmt_money(s.get('net_income'))}")
-            lines.append(f"  Depreciation & Amort.:    {_fmt_money(s.get('depreciation_and_amortization'))}")
-            lines.append(f"  Stock-Based Comp.:        {_fmt_money(s.get('share_based_compensation'))}")
-            lines.append(f"  Operating Cash Flow:      {_fmt_money(s.get('net_cash_flow_from_operations'))}")
-            lines.append(f"  Capital Expenditure:      {_fmt_money(s.get('capital_expenditure'))}")
-            lines.append(f"  Business Acq./Disposals:  {_fmt_money(s.get('business_acquisitions_and_disposals'))}")
-            lines.append(f"  Investment Acq./Disposals:{_fmt_money(s.get('investment_acquisitions_and_disposals'))}")
-            lines.append(f"  Investing Cash Flow:      {_fmt_money(s.get('net_cash_flow_from_investing'))}")
-            lines.append(f"  Debt Issuance/Repayment:  {_fmt_money(s.get('issuance_or_repayment_of_debt_securities'))}")
-            lines.append(f"  Equity Issuance/Purchase: {_fmt_money(s.get('issuance_or_purchase_of_equity_shares'))}")
-            lines.append(f"  Dividends Paid:           {_fmt_money(s.get('dividends_and_other_cash_distributions'))}")
-            lines.append(f"  Financing Cash Flow:      {_fmt_money(s.get('net_cash_flow_from_financing'))}")
-            lines.append(f"  Net Change in Cash:       {_fmt_money(s.get('change_in_cash_and_equivalents'))}")
-            lines.append(f"  FX Effect:                {_fmt_money(s.get('effect_of_exchange_rate_changes'))}")
-            lines.append(f"  Ending Cash Balance:      {_fmt_money(s.get('ending_cash_balance'))}")
-            lines.append(f"  Free Cash Flow:           {_fmt_money(s.get('free_cash_flow'))}")
-            if s.get("filing_url"):
-                lines.append(f"  Filing:                   {s.get('filing_url')}")
-            lines.append("")
-        result = "\n".join(lines)
-        _cache.set(cache_key, result, TTL_STATEMENTS)
-        return result
+    if not records:
+        fmp_data = _get_fmp(f"/cash-flow-statement/{symbol}", {"period": "annual", "limit": limit})
+        fmp_err = _err_msg(fmp_data, "FMP ")
+        if fmp_err:
+            return fmp_err
+        records = fmp_data if isinstance(fmp_data, list) else None
 
-    # FMP fallback
-    fmp_period = "annual" if period != "quarterly" else "quarter"
-    fmp_data = _get_fmp(f"/cash-flow-statement/{symbol}", {"period": fmp_period, "limit": limit})
-    fmp_err = _err_msg(fmp_data, "FMP ")
-    if fmp_err:
-        return fmp_err
-    if not fmp_data or not isinstance(fmp_data, list) or len(fmp_data) == 0:
+    if not records:
         return f"No cash flow statements found for '{symbol}'."
 
-    lines = [f"💧 Cash Flow Statements — {symbol} ({period}, via FMP)\n"]
-    for s in fmp_data:
-        date = s.get("date", "N/A")
-        fmp_p = s.get("period", "")
-        currency = s.get("reportedCurrency", "USD")
-        lines.append(f"▸ {fmp_p} — {date} [{currency}]")
-        lines.append(f"  Net Income:               {_fmt_money(s.get('netIncome'))}")
-        lines.append(f"  Depreciation & Amort.:    {_fmt_money(s.get('depreciationAndAmortization'))}")
-        lines.append(f"  Stock-Based Comp.:        {_fmt_money(s.get('stockBasedCompensation'))}")
-        lines.append(f"  Operating Cash Flow:      {_fmt_money(s.get('operatingCashFlow'))}")
-        lines.append(f"  Capital Expenditure:      {_fmt_money(s.get('capitalExpenditure'))}")
-        lines.append(f"  Investing Cash Flow:      {_fmt_money(s.get('netCashUsedForInvestingActivites'))}")
-        lines.append(f"  Financing Cash Flow:      {_fmt_money(s.get('netCashUsedProvidedByFinancingActivities'))}")
-        lines.append(f"  Net Change in Cash:       {_fmt_money(s.get('netChangeInCash'))}")
-        lines.append(f"  Free Cash Flow:           {_fmt_money(s.get('freeCashFlow'))}")
+    lines = [f"💧 Cash Flow Statements — {symbol}\n"]
+    for s in records:
+        date = s.get("report_period") or s.get("date", "N/A")
+        period = s.get("fiscal_period") or s.get("period", "")
+        currency = s.get("currency") or s.get("reportedCurrency", "USD")
+        lines.append(f"Period: {period} {date} [{currency}]")
+        lines.append(f"Operating CF:   {_fmt_money(s.get('net_cash_flow_from_operations') or s.get('operatingCashFlow'))}")
+        lines.append(f"Investing CF:   {_fmt_money(s.get('net_cash_flow_from_investing') or s.get('netCashUsedForInvestingActivites'))}")
+        lines.append(f"Financing CF:   {_fmt_money(s.get('net_cash_flow_from_financing') or s.get('netCashUsedProvidedByFinancingActivities'))}")
+        lines.append(f"Capital Expenditure: {_fmt_money(s.get('capital_expenditure') or s.get('capitalExpenditure'))}")
+        lines.append(f"Free Cash Flow: {_fmt_money(s.get('free_cash_flow') or s.get('freeCashFlow'))}")
+        lines.append(f"Net Change:     {_fmt_money(s.get('change_in_cash_and_equivalents') or s.get('netChangeInCash'))}")
         lines.append("")
     result = "\n".join(lines)
     _cache.set(cache_key, result, TTL_STATEMENTS)
@@ -757,7 +618,6 @@ def get_company_metrics(symbol: str) -> str:
     return result
 
 
-# ── Tool 6: Market movers (FMP) ───────────────────────────────────────────────
 def get_market_data(filter_type: str = "actives") -> str:
     """Top gainers, losers, or most active stocks via FMP."""
     if not os.getenv("FMP_API_KEY"):
@@ -799,52 +659,3 @@ def get_market_data(filter_type: str = "actives") -> str:
     return result
 
 
-# ── Tool 7: Crypto prices (FMP) ───────────────────────────────────────────────
-def get_crypto_data(symbol: str = "BTCUSD") -> str:
-    """Cryptocurrency prices via FMP. Examples: BTCUSD, ETHUSD, XRPUSD."""
-    if not os.getenv("FMP_API_KEY"):
-        return "FMP_API_KEY not set. Crypto data requires FMP_API_KEY in .env."
-
-    symbol = symbol.upper().strip()
-    if not symbol.endswith("USD"):
-        symbol += "USD"
-
-    cache_key = f"crypto:{symbol}"
-    cached = _cache.get(cache_key)
-    if cached:
-        return cached
-
-    data = _get_fmp(f"/quote/{symbol}")
-    err = _err_msg(data, "FMP ")
-    if err:
-        return err
-    if not data or not isinstance(data, list) or len(data) == 0:
-        return f"Crypto symbol '{symbol}' not found. Try BTCUSD, ETHUSD, XRPUSD."
-
-    q = data[0]
-    price = q.get("price", "N/A")
-    change = q.get("change", 0)
-    change_pct = q.get("changesPercentage", 0)
-    name = q.get("name", symbol)
-    day_high = q.get("dayHigh")
-    day_low = q.get("dayLow")
-    year_high = q.get("yearHigh")
-    year_low = q.get("yearLow")
-    volume = q.get("volume")
-
-    direction = "▲" if isinstance(change, (int, float)) and change >= 0 else "▼"
-    lines = [
-        f"🪙 {name} ({symbol})",
-        f"Price:       ${price:,.2f}" if isinstance(price, (int, float)) else f"Price: {price}",
-        (
-            f"Change:      {direction} ${abs(change):,.2f} ({change_pct:+.2f}%)"
-            if isinstance(change, (int, float))
-            else ""
-        ),
-        f"Day Range:   ${day_low:,.2f} – ${day_high:,.2f}" if day_low and day_high else "",
-        f"52-wk Range: ${year_low:,.2f} – ${year_high:,.2f}" if year_low and year_high else "",
-        f"Volume:      {volume:,}" if volume else "",
-    ]
-    result = "\n".join(line for line in lines if line)
-    _cache.set(cache_key, result, TTL_CRYPTO)
-    return result

@@ -18,7 +18,6 @@ from financial_advisor.tools.fmp_tools import (
     get_earnings,
     get_company_metrics,
     get_market_data,
-    get_crypto_data,
 )
 
 mcp = FastMCP("FinancialDataServer")
@@ -77,13 +76,6 @@ def market_data(filter_type: str = "actives") -> str:
     return get_market_data(filter_type)
 
 
-@mcp.tool()
-def crypto_data(symbol: str = "BTCUSD") -> str:
-    """
-    Cryptocurrency price via FMP. Examples: 'BTCUSD', 'ETHUSD', 'XRPUSD'
-    Example: crypto_data('BTCUSD')
-    """
-    return get_crypto_data(symbol)
 
 @mcp.tool()
 def income_statements(symbol: str, period: str = "annual", limit: int = 4) -> str:

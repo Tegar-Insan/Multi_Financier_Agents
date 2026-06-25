@@ -21,80 +21,50 @@ def _get_client() -> gspread.Client:
     return gspread.authorize(_get_creds())
 
 
-def create_monthly_budget_sheet(month: str, year: int, monthly_income: float) -> dict:
+def record_income_sources() -> dict:
     """
-    Creates a new tab inside the master Google Spreadsheet for the specified month.
-    Sets up headers and records the user's total monthly income.
-
-    Args:
-        month (str): Full month name e.g. 'January', 'March'.
-        year (int): The 4-digit year e.g. 2026.
-        monthly_income (float): Total money available this month in MYR.
+    Prompts the user to input all income sources for the month and calculates net income.
 
     Returns:
-        dict: status, spreadsheet_url, spreadsheet_id, tab_name or error.
+        dict: status, net_income, and confirmation message.
     """
     try:
-        gc = _get_client()
-        master_id = os.getenv("GOOGLE_MASTER_SHEET_ID")
+        total_income = 0.0
+        income_sources = []
 
-        if not master_id:
-            return {"status": "error", "error": "GOOGLE_MASTER_SHEET_ID not set in .env"}
+        print("Please enter your income sources for this month.")
+        print("Type 'done' when finished.")
 
-        spreadsheet = gc.open_by_key(master_id)
-        tab_name = f"{month} {year}"
-
-        existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
-        if tab_name in existing_tabs:
-            ws = spreadsheet.worksheet(tab_name)
-        else:
-            ws = spreadsheet.add_worksheet(title=tab_name, rows=1000, cols=10)
-
-        headers = [
-            ["💰 MONTHLY BUDGET TRACKER", "", "", ""],
-            [f"Month: {tab_name}", "", f"Income: {monthly_income}", ""],
-            [""],
-            ["Category", "Description", "Amount (MYR)", "Date"],
-        ]
-        ws.update("A1:D4", headers)
-        ws.update("F1:G1", [["📊 SUMMARY", ""]])
-        ws.update("F2:G6", [
-            ["Total Income", monthly_income],
-            ["Total Expenses", "=SUM(C5:C1000)"],
-            ["Remaining Balance", f"={monthly_income}-SUM(C5:C1000)"],
-            [""],
-            ["Status", "=IF(G4>=0,\"✅ On Track\",\"❌ Over Budget\")"],
-        ])
+        while True:
+            source = input("Income Source (or 'done'): ").strip()
+            if source.lower() == "done":
+                break
+            amount_str = input(f"Amount for {source} (MYR): ").strip()
+            try:
+                amount = float(amount_str)
+                total_income += amount
+                income_sources.append({"source": source, "amount": amount})
+            except ValueError:
+                print("Invalid amount. Please enter a numeric value.")
 
         return {
             "status": "success",
-            "spreadsheet_url": spreadsheet.url,
-            "spreadsheet_id": master_id,
-            "tab_name": tab_name,
-            "message": f"Created budget tab '{tab_name}' with income MYR {monthly_income}.",
+            "net_income": total_income,
+            "income_sources": income_sources,
+            "message": f"Total monthly income recorded: MYR {total_income:.2f}",
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
 
-def add_expense_entry(
-    spreadsheet_id: str,
-    category: str,
-    description: str,
-    amount: float,
-    date: Optional[str] = None,
-    tab_name: Optional[str] = None,
-) -> dict:
+def switch_tabs(tab_name: str, spreadsheet_id: Optional[str] = None) -> dict:
     """
-    Adds a single expense entry to an existing monthly budget tab.
+    Switches to a specific tab in the Google Spreadsheet (e.g. 'Expense', 'Income', 'Dashboard').
 
     Args:
-        spreadsheet_id (str): The master Google Spreadsheet ID.
-        category (str): Expense category e.g. 'Food', 'Transport', 'Utilities'.
-        description (str): Short description e.g. 'Grab to office'.
-        amount (float): Expense amount in MYR.
-        date (str, optional): Date as 'YYYY-MM-DD'. Defaults to today.
-        tab_name (str, optional): Tab name e.g. 'March 2026'. Defaults to current month.
+        tab_name (str): The name of the tab to switch to.
+        spreadsheet_id (str, optional): The master Google Spreadsheet ID. Defaults to the
+            configured GOOGLE_MASTER_SHEET_ID env var — do not ask the user for this.
 
     Returns:
         dict: status and confirmation message or error.
@@ -106,48 +76,108 @@ def add_expense_entry(
 
         spreadsheet = gc.open_by_key(spreadsheet_id)
 
-        if not date:
-            date = datetime.today().strftime("%Y-%m-%d")
-        if not tab_name:
-            tab_name = datetime.today().strftime("%B %Y")
-
         try:
             ws = spreadsheet.worksheet(tab_name)
+            return {
+                "status": "success",
+                "message": f"Switched to tab '{tab_name}' successfully.",
+                "tab_name": tab_name,
+            }
         except gspread.WorksheetNotFound:
             return {
                 "status": "error",
-                "error": f"Tab '{tab_name}' not found. Create this month's budget first.",
+                "error": f"Tab '{tab_name}' not found in the spreadsheet.",
             }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
-        all_values = ws.col_values(1)
-        next_row = max(len(all_values) + 1, 5)
-        ws.update(f"A{next_row}:D{next_row}", [[category, description, amount, date]])
+
+def _append_row(spreadsheet, tab_name: str, category: str, amount: float, description: str, date: Optional[str]) -> dict:
+    if not date:
+        date_obj = datetime.today()
+    else:
+        date_obj = datetime.strptime(date, "%Y-%m-%d")
+
+    date_str = date_obj.strftime("%Y-%m-%d")
+    month_str = date_obj.strftime("%B")
+    week_num = date_obj.isocalendar()[1]
+
+    try:
+        ws = spreadsheet.worksheet(tab_name)
+    except gspread.WorksheetNotFound:
+        return {
+            "status": "error",
+            "error": f"Tab '{tab_name}' not found in the spreadsheet.",
+        }
+
+    all_values = ws.col_values(1)
+    next_row = max(len(all_values) + 1, 2)
+    ws.update(
+        f"A{next_row}:F{next_row}",
+        [[date_str, month_str, week_num, category, amount, description]],
+    )
+
+    return {"status": "success", "row": next_row, "date": date_str, "month": month_str, "week": week_num}
+
+
+def add_expense_entry(
+    category: str,
+    description: str,
+    amount: float,
+    date: Optional[str] = None,
+    spreadsheet_id: Optional[str] = None,
+) -> dict:
+    """
+    Adds a single expense entry to the 'Expense' tab.
+
+    Args:
+        category (str): Expense category e.g. 'food', 'transport', 'housing', 'daily'.
+        description (str): Short description e.g. 'Lunch', 'Bus Pass'.
+        amount (float): Expense amount in MYR.
+        date (str, optional): Date as 'YYYY-MM-DD'. Defaults to today.
+        spreadsheet_id (str, optional): The master Google Spreadsheet ID. Defaults to the
+            configured GOOGLE_MASTER_SHEET_ID env var — do not ask the user for this.
+
+    Returns:
+        dict: status and confirmation message or error.
+    """
+    try:
+        gc = _get_client()
+        if not spreadsheet_id:
+            spreadsheet_id = os.getenv("GOOGLE_MASTER_SHEET_ID")
+
+        spreadsheet = gc.open_by_key(spreadsheet_id)
+
+        result = _append_row(spreadsheet, "Expense", category, amount, description, date)
+        if result["status"] == "error":
+            return result
 
         return {
             "status": "success",
-            "message": f"Added: {category} | {description} | MYR {amount:.2f} on {date}",
-            "row": next_row,
+            "message": f"Added expense: {category} | {description} | MYR {amount:.2f} on {result['date']}",
+            "row": result["row"],
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
 
 def add_income_entry(
-    spreadsheet_id: str,
-    source: str,
+    category: str,
     amount: float,
+    description: Optional[str] = "",
     date: Optional[str] = None,
-    tab_name: Optional[str] = None,
+    spreadsheet_id: Optional[str] = None,
 ) -> dict:
     """
-    Adds a single income entry to an existing monthly budget tab.
+    Adds a single income entry to the 'Income' tab.
 
     Args:
-        spreadsheet_id (str): The master Google Spreadsheet ID.
-        source (str): Income source e.g. 'Salary', 'Freelance'.
+        category (str): Income source e.g. 'salary', 'allowance', 'freelance'.
         amount (float): Income amount in MYR.
+        description (str, optional): Short description e.g. 'Monthly Allowance'.
         date (str, optional): Date as 'YYYY-MM-DD'. Defaults to today.
-        tab_name (str, optional): Tab name e.g. 'March 2026'. Defaults to current month.
+        spreadsheet_id (str, optional): The master Google Spreadsheet ID. Defaults to the
+            configured GOOGLE_MASTER_SHEET_ID env var — do not ask the user for this.
 
     Returns:
         dict: status and confirmation message or error.
@@ -159,45 +189,72 @@ def add_income_entry(
 
         spreadsheet = gc.open_by_key(spreadsheet_id)
 
-        if not date:
-            date = datetime.today().strftime("%Y-%m-%d")
-        if not tab_name:
-            tab_name = datetime.today().strftime("%B %Y")
-
-        try:
-            ws = spreadsheet.worksheet(tab_name)
-        except gspread.WorksheetNotFound:
-            return {
-                "status": "error",
-                "error": f"Tab '{tab_name}' not found. Create this month's budget first.",
-            }
-
-        all_values = ws.col_values(1)
-        next_row = max(len(all_values) + 1, 5)
-        ws.update(f"A{next_row}:D{next_row}", [[source, "", amount, date]])
+        result = _append_row(spreadsheet, "Income", category, amount, description, date)
+        if result["status"] == "error":
+            return result
 
         return {
             "status": "success",
-            "message": f"Added income: {source} | MYR {amount:.2f} on {date}",
-            "row": next_row,
+            "message": f"Added income: {category} | MYR {amount:.2f} on {result['date']}",
+            "row": result["row"],
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
-        
+
+
+def _parse_amount(raw: str) -> Optional[float]:
+    cleaned = raw.replace("RM", "").replace(",", "").strip()
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _read_entries(ws, month: Optional[str]) -> tuple:
+    rows = ws.get_all_values()[1:]
+    entries = []
+    total = 0.0
+    category_totals: dict = {}
+
+    for row in rows:
+        if len(row) < 5 or not row[0]:
+            continue
+        if month and row[1].strip().lower() != month.strip().lower():
+            continue
+        amount = _parse_amount(row[4])
+        if amount is None:
+            continue
+
+        category = row[3]
+        entries.append({
+            "date": row[0],
+            "month": row[1],
+            "week": row[2],
+            "category": category,
+            "amount": amount,
+            "description": row[5] if len(row) > 5 else "",
+        })
+        total += amount
+        category_totals[category] = category_totals.get(category, 0) + amount
+
+    return entries, total, category_totals
+
 
 def get_budget_summary(
-    spreadsheet_id: str,
-    tab_name: Optional[str] = None,
+    month: Optional[str] = None,
+    spreadsheet_id: Optional[str] = None,
 ) -> dict:
     """
-    Retrieves full summary of monthly budget including income, expenses, and balance.
+    Retrieves full budget summary from the 'Income' and 'Expense' tabs, including total
+    income, total expenses, balance, and per-category expense breakdown.
 
     Args:
-        spreadsheet_id (str): The master Google Spreadsheet ID.
-        tab_name (str, optional): Tab name e.g. 'March 2026'. Defaults to current month.
+        month (str, optional): Filter entries by month name e.g. 'May'. Defaults to all months.
+        spreadsheet_id (str, optional): The master Google Spreadsheet ID. Defaults to the
+            configured GOOGLE_MASTER_SHEET_ID env var — do not ask the user for this.
 
     Returns:
-        dict: status, income, total_expenses, balance, category_totals, expenses list.
+        dict: status, total_income, total_expenses, balance, category_totals, income, expenses.
     """
     try:
         gc = _get_client()
@@ -206,54 +263,29 @@ def get_budget_summary(
 
         spreadsheet = gc.open_by_key(spreadsheet_id)
 
-        if not tab_name:
-            tab_name = datetime.today().strftime("%B %Y")
-
         try:
-            ws = spreadsheet.worksheet(tab_name)
-        except gspread.WorksheetNotFound:
-            return {
-                "status": "error",
-                "error": f"Tab '{tab_name}' not found. Create this month's budget first.",
-            }
+            income_ws = spreadsheet.worksheet("Income")
+            expense_ws = spreadsheet.worksheet("Expense")
+        except gspread.WorksheetNotFound as e:
+            return {"status": "error", "error": f"Tab not found: {e}"}
 
-        income_cell = ws.acell("C2").value or "0"
-        income = float(str(income_cell).replace("Income:", "").strip())
+        income_entries, total_income, income_category_totals = _read_entries(income_ws, month)
+        expense_entries, total_expenses, expense_category_totals = _read_entries(expense_ws, month)
 
-        all_data = ws.get_all_values()
-        expense_rows = all_data[4:]
-
-        expenses = []
-        total_expenses = 0.0
-        category_totals: dict = {}
-
-        for row in expense_rows:
-            if len(row) >= 3 and row[0] and row[2]:
-                try:
-                    amount = float(row[2])
-                    expenses.append({
-                        "category": row[0],
-                        "description": row[1] if len(row) > 1 else "",
-                        "amount": amount,
-                        "date": row[3] if len(row) > 3 else "",
-                    })
-                    total_expenses += amount
-                    category_totals[row[0]] = category_totals.get(row[0], 0) + amount
-                except ValueError:
-                    continue
-
-        balance = income - total_expenses
+        balance = total_income - total_expenses
 
         return {
             "status": "success",
-            "income": income,
+            "total_income": total_income,
             "total_expenses": total_expenses,
             "balance": balance,
             "is_over_budget": balance < 0,
-            "category_totals": category_totals,
-            "expenses": expenses,
+            "category_totals": expense_category_totals,
+            "income_category_totals": income_category_totals,
+            "income": income_entries,
+            "expenses": expense_entries,
             "spreadsheet_url": spreadsheet.url,
-            "tab_name": tab_name,
+            "month": month,
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
